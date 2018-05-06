@@ -20,20 +20,15 @@ public class Provider {
 
 		scheduledExecutorService.schedule(new Runnable() {
 			public void run() {
-				HelloService helloService = new HelloServiceImpl();
 				try {
+					HelloService helloService  = new HelloServiceImpl();
 					Registry registry = LocateRegistry.createRegistry(8888);
+					Naming.bind("rmi://127.0.0.1:8888/hello",helloService);
 				} catch (RemoteException e) {
 					e.printStackTrace();
-				}
-
-				try {
-					Naming.bind("rmi://127.0.0.1:8888/hello",helloService);
-				} catch (AlreadyBoundException e) {
+				}catch (AlreadyBoundException e) {
 					e.printStackTrace();
 				} catch (MalformedURLException e) {
-					e.printStackTrace();
-				} catch (RemoteException e) {
 					e.printStackTrace();
 				}
 				System.out.println(">>>>>INFO:远程IHello对象绑定成功！");
