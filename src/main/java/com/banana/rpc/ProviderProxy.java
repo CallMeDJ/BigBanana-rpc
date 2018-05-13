@@ -18,14 +18,23 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ *  Provider 提供服务的代理
+ */
 public class ProviderProxy {
+	/**
+	 * 所提供的所有服务的引用。
+	 */
 	public static Map<String,ProviderModel> services = new HashMap<String, ProviderModel>();
 
 	private static String  getServiceName(String interfaceName , String methodName){
 		return interfaceName+"-BRPC-"+methodName;
 	}
 
-	static {
+	public static void  initServices(){
+		/**
+		 * 初始化服务列表，相当于服务注册
+		 */
 		Provider provider = new Provider();
 		ProviderModel providerModel = new ProviderModel();
 		providerModel.setObject(provider);
@@ -33,14 +42,22 @@ public class ProviderProxy {
 
 		Class anInterface = provider.getInterface();
 
+		/**
+		 * 统一服务名称为：服务类名-BRPC-方法名。如  com.banana.rpc.Provide-BRPC-hello
+		 */
 		Method[] methods = anInterface.getMethods();
 		for(Method method : methods){
 			services.put(getServiceName(anInterface.getName(),method.getName()) , providerModel);
 		}
+	}
 
+	static {
 
+		initServices();
 
-
+		/**
+		 * 这里开始对外提供服务，这里使用Socket的方式提供
+		 */
 		ServerSocket serverSocket = null;
 
 		try {
@@ -53,6 +70,11 @@ public class ProviderProxy {
 
 				String requestStr = bufferedReader.readLine();
 
+
+				/**
+				 * 请求的序列化模式为JSON，这在Consumer 端也是一样的约定。
+				 */
+
 				JSONObject request = JSON.parseObject(requestStr);
 
 				String interfaceName = request.getString("interfaceName");
@@ -62,19 +84,34 @@ public class ProviderProxy {
 				Class[] argClasses = new Class[param.size()];
 
 				argClasses = param.stream().map(x -> x.getClass()).collect(Collectors.toList()).toArray(argClasses);
-				
+
+
+				/**
+				 * 找到对应的服务
+				 */
 
 				ProviderModel currentService = services.get(getServiceName(interfaceName, methodName));
 
+
+				/**
+				 * 找到服务对应的方法，然后用反射去调用
+				 */
 
 				Class className = currentService.getClassName();
 
 				Method method = className.getMethod(methodName, argClasses);
 
+				/**
+				 * 将调用结果进行JSON化，然后回写到 Socket 中返回。
+				 */
+
 				String invoke = JSON.toJSONString(method.invoke(currentService.getObject(), param.toArray()));
 
 
 				BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(accept.getOutputStream()));
+				/**
+				 * 因为我们使用了readLine，所以强行加上了\n来表示结束，这在Consumer 端也是一样的约定。
+				 */
 				bufferedWriter.write(invoke+"\n");
 
 				bufferedWriter.flush();

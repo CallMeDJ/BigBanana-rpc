@@ -4,6 +4,10 @@ import com.big.rpc.commom.HelloService;
 
 import java.util.Scanner;
 
+/**
+ * 定义一个Consumer
+ */
+
 public class Consumer {
 	public static void main(String args[]){
 		Scanner scanner = new Scanner(System.in);

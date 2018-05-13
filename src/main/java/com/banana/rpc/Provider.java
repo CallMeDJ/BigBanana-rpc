@@ -5,6 +5,10 @@ import com.big.rpc.commom.HelloService;
 
 import java.rmi.RemoteException;
 
+/**
+ * 定义一个 Provider
+ */
+
 public class Provider implements HelloService,BRPC {
 	@Override
 	public Integer hello(String str) throws RemoteException {
