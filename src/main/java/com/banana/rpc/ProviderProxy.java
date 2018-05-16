@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -29,6 +30,14 @@ public class ProviderProxy {
 
 	private static String  getServiceName(String interfaceName , String methodName){
 		return interfaceName+"-BRPC-"+methodName;
+	}
+
+	public static ExecutorService executorService = Executors.newFixedThreadPool(6);
+
+	@Override
+	protected void finalize() throws Throwable {
+		executorService.shutdownNow();
+		super.finalize();
 	}
 
 	public static void  initServices(){
@@ -62,69 +71,80 @@ public class ProviderProxy {
 
 		try {
 			serverSocket = new ServerSocket(8888);
+			Socket accept = serverSocket.accept();
+			BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(accept.getInputStream()));
+			while (true) {
 
-			while (true){
-				Socket accept = serverSocket.accept();
-
-				BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(accept.getInputStream()));
-
-				String requestStr = bufferedReader.readLine();
-
-
-				/**
-				 * 请求的序列化模式为JSON，这在Consumer 端也是一样的约定。
-				 */
-
-				JSONObject request = JSON.parseObject(requestStr);
-
-				String interfaceName = request.getString("interfaceName");
-				String methodName = request.getString("method");
-				JSONArray param = request.getJSONArray("param");
-
-				Class[] argClasses = new Class[param.size()];
-
-				argClasses = param.stream().map(x -> x.getClass()).collect(Collectors.toList()).toArray(argClasses);
+				try {
+					accept.sendUrgentData(0);
+				} catch (IOException e) {
+					accept = serverSocket.accept();
+					bufferedReader = new BufferedReader(new InputStreamReader(accept.getInputStream()));
+				}
 
 
-				/**
-				 * 找到对应的服务
-				 */
+				final String requestStr = bufferedReader.readLine();
+				if(requestStr == null){continue;}
 
-				ProviderModel currentService = services.get(getServiceName(interfaceName, methodName));
+					try {
+
+						/**
+						 * 请求的序列化模式为JSON，这在Consumer 端也是一样的约定。
+						 */
+						System.out.println("receive request "+requestStr);
+						JSONObject request = JSON.parseObject(requestStr);
+
+						String requestId = request.getString("requestId");
+						String interfaceName = request.getString("interfaceName");
+						String methodName = request.getString("method");
+						JSONArray param = request.getJSONArray("param");
+
+						Class[] argClasses = new Class[param.size()];
+
+						argClasses = param.stream().map(x -> x.getClass()).collect(Collectors.toList()).toArray(argClasses);
 
 
-				/**
-				 * 找到服务对应的方法，然后用反射去调用
-				 */
+						/**
+						 * 找到对应的服务
+						 */
 
-				Class className = currentService.getClassName();
-
-				Method method = className.getMethod(methodName, argClasses);
-
-				/**
-				 * 将调用结果进行JSON化，然后回写到 Socket 中返回。
-				 */
-
-				String invoke = JSON.toJSONString(method.invoke(currentService.getObject(), param.toArray()));
+						ProviderModel currentService = services.get(getServiceName(interfaceName, methodName));
 
 
-				BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(accept.getOutputStream()));
-				/**
-				 * 因为我们使用了readLine，所以强行加上了\n来表示结束，这在Consumer 端也是一样的约定。
-				 */
-				bufferedWriter.write(invoke+"\n");
+						/**
+						 * 找到服务对应的方法，然后用反射去调用
+						 */
 
-				bufferedWriter.flush();
+						Class className = currentService.getClassName();
+
+						Method method = className.getMethod(methodName, argClasses);
+
+						/**
+						 * 将调用结果进行JSON化，然后回写到 Socket 中返回。
+						 */
+
+
+						JSONObject result = new JSONObject();
+						result.put("requestId", requestId);
+						result.put("result", method.invoke(currentService.getObject(), param.toArray()));
+
+						String invoke = result.toJSONString();
+
+						System.out.println("send response "+invoke);
+						BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(accept.getOutputStream()));
+						/**
+						 * 因为我们使用了readLine，所以强行加上了\n来表示结束，这在Consumer 端也是一样的约定。
+						 */
+						bufferedWriter.write(invoke + "\n");
+
+						bufferedWriter.flush();
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+
 			}
 
-
 		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (NoSuchMethodException e) {
-			e.printStackTrace();
-		} catch (IllegalAccessException e) {
-			e.printStackTrace();
-		} catch (InvocationTargetException e) {
 			e.printStackTrace();
 		} finally {
 			if(serverSocket != null){

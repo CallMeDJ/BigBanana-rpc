@@ -9,6 +9,11 @@ import java.lang.reflect.Method;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -16,40 +21,115 @@ import java.util.stream.Collectors;
  */
 
 public class ConsumerProxy {
-	public Object call(Class interfaceClass, String methodName, Object[] params){
+	public static ExecutorService executorService = Executors.newFixedThreadPool(10);
+	public static Map<String,MessageCallBack> messageCallBackMap = new ConcurrentHashMap<>();
+	public static Socket socket;
+	public static Random random = new Random();
 
-		Object result = null;
-		try (Socket socket = new Socket("127.0.0.1",8888)) {
+	@Override
+	protected void finalize() throws Throwable {
+		executorService.shutdownNow();
+		if(socket!=null){
+			socket.close();
+		}
+		super.finalize();
+	}
 
-			/**
-			 * 构造请求参数
-			 */
-			BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
+	public void init(){
+		try {
+			socket = new Socket("127.0.0.1",8888);
+			executorService.submit(()->{
+				try {
+					revice();
+				} catch (IOException e) {
+					e.printStackTrace();
+				} catch (NoSuchMethodException e) {
+					e.printStackTrace();
+				}
+			});
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 
 
-			JSONObject request = new JSONObject();
-			JSONArray paramArray = new JSONArray();
-			for(Object param : params){
-				paramArray.add(param);
-			}
-
-			request.put("interfaceName",interfaceClass.getName());
-			request.put("method",methodName);
-			request.put("param",paramArray);
+	}
 
 
-			/**
-			 * 请求的序列化模式为JSON，这在 Provider 端也是一样的约定。
-			 */
+	public Object call(Class interfaceClass, String methodName, Object[] params) throws InterruptedException, IOException {
+		MessageCallBack messageCallBack = new MessageCallBack();
+		String requestId = random.nextInt()+"";
 
-			String requestStr = request.toJSONString();
+		JSONObject request = new JSONObject();
+		JSONArray paramArray = new JSONArray();
+		for(Object param : params){
+			paramArray.add(param);
+		}
 
-			bufferedWriter.write(requestStr+"\n");
-			bufferedWriter.flush();
+		request.put("interfaceName",interfaceClass.getName());
 
-			BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+		request.put("method",methodName);
+		request.put("param",paramArray);
+		request.put("requestId",requestId);
+
+
+
+		String requestStr = request.toJSONString();
+
+		request.put("interface",interfaceClass);
+		request.put("params",params);
+
+		/**
+		 * 请求的序列化模式为JSON，这在 Provider 端也是一样的约定。
+		 */
+
+
+		messageCallBack.setRequest(request);
+
+		messageCallBackMap.put(requestId,messageCallBack);
+
+
+		send(socket,requestStr);
+
+
+
+		return messageCallBack.call();
+	}
+
+
+	public void send(Socket currentSocket , String requestStr) throws IOException {
+
+		System.out.println("send request "+requestStr);
+		BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(currentSocket.getOutputStream()));
+
+		bufferedWriter.write(requestStr+"\n");
+		bufferedWriter.flush();
+	}
+
+
+	public void revice() throws IOException, NoSuchMethodException {
+		BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+		while (true) {
 
 			String reqponseStr = bufferedReader.readLine();
+			if(reqponseStr == null){continue;}
+
+			System.out.println(reqponseStr);
+
+			JSONObject response = JSON.parseObject(reqponseStr);
+			String requestId = response.getString("requestId");
+			MessageCallBack messageCallBack = messageCallBackMap.get(requestId);
+
+			JSONObject request = messageCallBack.getRequest();
+
+			Class interfaceClass = (Class)request.get("interface");
+			String methodName = request.getString("method");
+			JSONArray param = request.getJSONArray("param");
+
+			Object[] params = (Object[])request.get("params");
+
+			param.size();
+
 
 			Class[] argClasses = new Class[params.length];
 
@@ -64,16 +144,13 @@ public class ConsumerProxy {
 			/**
 			 * 对返回结果进行反序列化
 			 */
-			result = JSON.parseObject(reqponseStr, method.getReturnType());
+			Object result = response.get("result");
 
+			messageCallBack.over(result);
 
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (NoSuchMethodException e) {
-			e.printStackTrace();
 		}
-		return result;
 	}
+
+
+
 }
