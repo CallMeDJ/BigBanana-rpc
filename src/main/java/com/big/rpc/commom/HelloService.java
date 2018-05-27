@@ -4,5 +4,5 @@ import java.rmi.Remote;
 import java.rmi.RemoteException;
 
 public interface HelloService  {
-	Integer hello(String str) throws RemoteException;
+	Integer hello(String str) ;
 }

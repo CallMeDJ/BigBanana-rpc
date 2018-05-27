@@ -11,7 +11,7 @@ import java.rmi.RemoteException;
 
 public class Provider implements HelloService,BRPC {
 	@Override
-	public Integer hello(String str) throws RemoteException {
+	public Integer hello(String str) {
 		return str.hashCode();
 	}
 

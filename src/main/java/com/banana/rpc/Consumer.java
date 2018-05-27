@@ -3,6 +3,9 @@ package com.banana.rpc;
 import com.big.rpc.commom.HelloService;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.Random;
 import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
@@ -14,6 +17,14 @@ import java.util.concurrent.Executors;
 
 public class Consumer {
 	public static ExecutorService executorService = Executors.newFixedThreadPool(10);
+	public static HelloService helloService = (HelloService) Proxy.newProxyInstance(HelloService.class.getClassLoader(), new Class[]{HelloService.class},
+			new InvocationHandler() {
+				@Override
+				public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+					Object call = Consumer.consumerProxy.call(proxy.getClass(), method.getName(), args);
+					return call;
+				}
+			});
 	public static 	ConsumerProxy consumerProxy = new ConsumerProxy();
 	public static Random random = new Random();
 
@@ -38,13 +49,7 @@ for(int i = 0 ; i<10 ; i++) {
 		Object[] params = new Object[1];
 		params[0] = line;
 		Object hello = null;
-		try {
-			hello = consumerProxy.call(HelloService.class, "hello", params);
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+			hello = helloService.hello(line);
 
 	});
 
